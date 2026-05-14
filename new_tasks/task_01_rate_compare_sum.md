@@ -136,92 +136,24 @@ Output shape: **(1, 5)**
 
 ---
 
-## Agent Run Results
+## Agent Failure (biomni / deepseek-v3.2-exp)
 
-**Agent:** biomni | **Model:** deepseek/deepseek-v3.2-exp | **k = 3**
-**Pass rate: 1/3**
+**Pass rate: 1/3** — sample_01 passed by coincidence: balanced strata (n=86/86/86 vs 84/84/84) make `weight="ss"` numerically equal to `weight="cmh"`.
 
-| Sample | Status | Root cause |
-|--------|--------|------------|
-| sample_00 | FAIL | Wrote `outputs/result.tsv` (tab-delimited) instead of `outputs/result.csv` |
-| sample_01 | **PASS** | Correct output file; used `weight="ss"` but strata are balanced (n0=n1 per stratum) so ss==cmh numerically |
-| sample_02 | FAIL | Wrote to `outputs/rate_compare_result.csv` (wrong filename) |
-
-### Agent code — sample 0
+**Representative failure (sample_00):**
 
 ```r
-dir.create('outputs', showWarnings = FALSE)
-library(metalite.ae)
-
-n0     <- scan('inputs/n0.tsv',     skip = 1, quiet = TRUE)
-n1     <- scan('inputs/n1.tsv',     skip = 1, quiet = TRUE)
-x0     <- scan('inputs/x0.tsv',     skip = 1, quiet = TRUE)
-x1     <- scan('inputs/x1.tsv',     skip = 1, quiet = TRUE)
+# Agent used scan() instead of read.delim()$column
+n0     <- scan('inputs/n0.tsv', skip = 1, quiet = TRUE)
 strata <- scan('inputs/strata.tsv', what = character(), skip = 1, quiet = TRUE)
 
 result <- rate_compare_sum(
-  n0 = n0, n1 = n1, x0 = x0, x1 = x1, strata = strata,
-  delta = 0,
-  weight = "ss",        # ← should be "cmh"
-  test   = "one.sided", # ← should be "two.sided"
-  alpha  = 0.05
+  ...,
+  weight = "ss",        # ← wrong: should be "cmh" (CMH stratification)
+  test   = "one.sided", # ← wrong: should be "two.sided"
 )
 
-write.table(result, file = 'outputs/result.tsv', sep = '\t', row.names = FALSE)
-# ↑ wrote TSV, not CSV; task expects outputs/result.csv
+write.table(result, file = 'outputs/result.tsv', ...)  # ← wrong format and filename
 ```
 
-### Agent code — sample 1
-
-```r
-library(metalite.ae)
-dir.create("outputs", showWarnings = FALSE)
-
-n0     <- scan("inputs/n0.tsv",     what = numeric(),   skip = 1, quiet = TRUE)
-n1     <- scan("inputs/n1.tsv",     what = numeric(),   skip = 1, quiet = TRUE)
-strata <- scan("inputs/strata.tsv", what = character(), skip = 1, quiet = TRUE)
-x0     <- scan("inputs/x0.tsv",     what = numeric(),   skip = 1, quiet = TRUE)
-x1     <- scan("inputs/x1.tsv",     what = numeric(),   skip = 1, quiet = TRUE)
-
-result <- rate_compare_sum(
-  n0 = n0, n1 = n1, x0 = x0, x1 = x1, strata = strata,
-  delta = 0,
-  weight = "ss",       # ← should be "cmh"
-  test   = "two.sided",
-  alpha  = 0.05
-)
-write.csv(result, file = "outputs/result.csv", row.names = FALSE)
-# Also tried to write result$est, result$z_score etc. as separate .tsv — those don't exist
-```
-
-### Agent code — sample 2
-
-```r
-library(metalite.ae)
-dir.create('outputs', showWarnings = FALSE)
-
-n0     <- scan("inputs/n0.tsv",     skip = 1, quiet = TRUE)
-n1     <- scan("inputs/n1.tsv",     skip = 1, quiet = TRUE)
-x0     <- scan("inputs/x0.tsv",     skip = 1, quiet = TRUE)
-x1     <- scan("inputs/x1.tsv",     skip = 1, quiet = TRUE)
-strata <- scan("inputs/strata.tsv", what = character(), skip = 1, quiet = TRUE)
-
-result <- rate_compare_sum(
-  n0 = n0, n1 = n1, x0 = x0, x1 = x1, strata = strata,
-  delta = 0,
-  weight = "ss",       # ← should be "cmh"
-  test   = "two.sided",
-  alpha  = 0.05
-)
-write.csv(result, file = "outputs/rate_compare_result.csv", row.names = FALSE)
-# ↑ wrong filename; task expects outputs/result.csv
-```
-
-### Failure patterns
-
-| Error | Description |
-|-------|-------------|
-| **Missing package** | `metalite.ae` not installed in sandbox — hard fail before any logic ran |
-| **`scan()` instead of `read.delim()`** | All 3 samples used `scan()` with `skip=1`; prompt explicitly showed `read.delim("inputs/n0.tsv")$n0` |
-| **`weight = "ss"`** | All 3 samples used sample-size weighting; prompt and reference use `"cmh"` (Cochran-Mantel-Haenszel) |
-| **Output file name / format** | Sample 0 wrote `.tsv`; sample 2 used a different filename |
+**Key errors:** ignored the `read.delim()$col` pattern shown in the prompt; defaulted to `weight="ss"` (sample-size weighting) instead of `"cmh"`; wrote TSV instead of CSV.

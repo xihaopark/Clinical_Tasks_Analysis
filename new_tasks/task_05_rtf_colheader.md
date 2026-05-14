@@ -105,77 +105,26 @@ Output shape: **(5, 3)**
 
 ---
 
-## Agent Run Results
+## Agent Failure (biomni / deepseek-v3.2-exp)
 
-**Agent:** biomni | **Model:** deepseek/deepseek-v3.2-exp | **k = 3**
 **Pass rate: 0/3**
 
-| Sample | Status | Root cause |
-|--------|--------|------------|
-| sample_00 | NO_OUTPUT | `rtf_doc()` does not exist → `could not find function "rtf_doc"` crash |
-| sample_01 | NO_OUTPUT | Agent emitted bash exploration text; `unexpected symbol` parse error in R |
-| sample_02 | NO_OUTPUT | Used `rtf::` package (different CRAN package); tried to write to read-only `inputs/` dir → crash |
-
-### Agent code — sample 0
+**Representative failure (sample_00):**
 
 ```r
 library(r2rtf)
-dir.create('outputs', showWarnings = FALSE)
 
-# Reads actual input (good), but calls hallucinated functions:
-rtf <- rtf_doc()            # ← does not exist
-rtf <- rtf %>% rtf_title("Clinical Trial Results Summary") %>%
-               rtf_subtitle(paste("Generated on:", Sys.Date()))
+rtf <- rtf_doc()   # ← does not exist; crashed here
+rtf <- rtf %>% rtf_title(...) %>% rtf_subtitle(...)
 rtf <- rtf %>%
-  rtf_table(data) %>%       # ← does not exist
+  rtf_table(data) %>%         # ← does not exist
   rtf_colheader(
     colheader = c("Patient ID", "Age", ...),
     col_rel_width = c(1.2, 0.8, ...)
   )
-rtf_encode(rtf, output_file)  # ← wrong signature; rtf_encode() returns RTF text, not write-to-file
+rtf_encode(rtf, output_file)  # ← wrong usage
 ```
 
-### Agent code — sample 1
+**Error:** `could not find function "rtf_doc"` — crashed immediately.
 
-```
-# The agent output was not valid R code — it emitted shell exploration commands:
-#
-#   cat("Current directory contents:\n")
-#   system("ls -la")
-#   system("ls -la inputs/ 2>/dev/null || echo 'No inputs directory found'")
-#   tryCatch({ library(r2rtf); cat("r2rtf package is available\n") }, ...)
-#
-# No usable R script was produced.
-```
-
-### Agent code — sample 2
-
-```r
-# Uses 'rtf' package (a different, unrelated package), not 'r2rtf'
-library(r2rtf)
-
-# Creates sample data and writes it as inputs/clinical_data.csv (ignores actual inputs/dataset.tsv)
-rtf_doc <- rtf::rtf_document(          # ← rtf:: not r2rtf::
-  title = "Clinical Trial Results",
-  output = "outputs/clinical_report.rtf"
-)
-col_headers <- r2rtf::rtf_colheader(   # ← rtf_colheader used as standalone; wrong approach
-  table_data,
-  colheader = c("Patient ID", "Age", "Gender", ...),
-  col_rel_width = c(1, 1, 1, ...)
-)
-rtf_doc <- rtf::rtf_add_table(rtf_doc, table_data, header = TRUE, colheader = col_headers, ...)
-rtf::rtf_write(rtf_doc)                # ← wrong package namespace
-
-# No result.csv created; never extracted attr(result, "rtf_colheader")
-```
-
-### Failure patterns
-
-| Error | Description |
-|-------|-------------|
-| **Sample 0: hallucinated API** | `rtf_doc()`, `rtf_table()` do not exist; misused `rtf_encode()` |
-| **Sample 1: no R code produced** | Agent emitted bash exploration commands (same pattern as task_03 sample_0) |
-| **Sample 2: wrong package** | Used `rtf::` namespace (a different CRAN package) instead of `r2rtf::` |
-| **All: missed attribute extraction** | The task requires `attr(result, "rtf_colheader")[[1]]` to get the 1-row header data frame with X1–X5 columns — no sample attempted this |
-| **All: wrong output format** | All samples attempted to write an `.rtf` file; task requires `outputs/result.csv` with position/col_name/label columns |
+**Root cause:** Same misunderstanding as task_04 — the agent invented a document-builder API. Additionally, it confused `rtf_colheader()` as a standalone function that takes a character vector of labels. The actual usage is `df |> rtf_page() |> rtf_colheader("Label A | Label B | ...")`, which attaches a structured attribute; the labels are then extracted via `attr(result, "rtf_colheader")[[1]]` — a 1-row data frame with columns `X1, X2, ..., Xn`.

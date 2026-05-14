@@ -113,96 +113,25 @@ Treatment arms: n_1 = High Dose (84), n_2 = Low Dose (84), n_3 = Placebo (86), n
 
 ---
 
-## Agent Run Results
+## Agent Failure (biomni / deepseek-v3.2-exp)
 
-**Agent:** biomni | **Model:** deepseek/deepseek-v3.2-exp | **k = 3**
 **Pass rate: 0/3**
 
-| Sample | Status | Root cause |
-|--------|--------|------------|
-| sample_00 | NO_OUTPUT | Called `prepare_ae_summary(adsl=adsl, adae=adae, ...)` — raw dataframes passed as kwargs; wrong API signature |
-| sample_01 | FAIL | Built `meta_adam()` + `define_population()` chain from scratch; function ran but output structure differed |
-| sample_02 | NO_OUTPUT | Expected `inputs/meta.rds` which doesn't exist; tried to create it but inputs dir is read-only |
-
-### Agent code — sample 0
+**Representative failure (sample_00):**
 
 ```r
-library(metalite.ae)
-library(dplyr)
-library(readr)
-dir.create('outputs', showWarnings = FALSE)
+adsl <- read.delim('inputs/adsl.tsv', ...)
+adae <- read.delim('inputs/adae.tsv', ...)
 
-adsl <- read.delim('inputs/adsl.tsv', sep = '\t', stringsAsFactors = FALSE)
-adae <- read.delim('inputs/adae.tsv', sep = '\t', stringsAsFactors = FALSE)
-
-# Calls prepare_ae_summary with raw data frames — wrong API
+# Agent passed raw dataframes directly — wrong API entirely
 result <- prepare_ae_summary(
-  adsl        = adsl,
+  adsl        = adsl,          # ← prepare_ae_summary() takes a meta_adam object, not raw data
   adae        = adae,
   population  = "SAFFL == 'Y'",
-  observation = "TRTEMFL == 'Y'",
   parameter   = "any;rel;ser",
-  analysis    = "overview",
-  ...
-)
-write.csv(result$table, file = "outputs/ae_summary_table.csv", row.names = FALSE)
-```
-
-### Agent code — sample 1
-
-```r
-library(metalite)
-library(metalite.ae)
-dir.create('outputs', showWarnings = FALSE)
-
-adsl <- read.delim("inputs/adsl.tsv", stringsAsFactors = FALSE)
-adae <- read.delim("inputs/adae.tsv", stringsAsFactors = FALSE)
-
-# Attempts to build meta_adam from scratch — correct direction but missing structure
-meta <- meta_adam(population = adsl, observation = adae)
-
-plan <- plan(analysis = "ae_summary", population = "apat",
-             observation = "wk12", parameter = "any;rel;ser")
-meta <- meta |>
-  define_plan(plan = plan) |>
-  define_population(name = "apat", id = "USUBJID", group = "TRTA",
-                    subset = SAFFL == "Y", ...) |>
-  define_observation(name = "wk12", ...) |>
-  define_parameter(name = "any", ...) |>
-  define_parameter(name = "rel", subset = AEREL %in% c("PROBABLE","POSSIBLE"), ...) |>
-  define_parameter(name = "ser", subset = AESER == "Y", ...)
-
-result <- prepare_ae_summary(meta, population = "apat",
-                              observation = "wk12", parameter = "any;rel;ser")
-# Tries to access result$n, result$prop, result$diff, result$n_pop
-```
-
-### Agent code — sample 2
-
-```r
-library(metalite.ae)
-dir.create('outputs', showWarnings = FALSE)
-
-# Expects inputs/meta.rds, inputs/population.csv, inputs/observation.csv, inputs/parameter.txt
-# — none of these files exist; task only provides adsl.tsv and adae.tsv
-if (!file.exists('inputs/meta.rds')) {
-  meta <- metalite::meta_adam(
-    population  = data.frame(USUBJID = paste0("S", 1:100), ...),
-    observation = data.frame(USUBJID = ..., AEDECOD = ...)
-  )
-}
-result <- metalite.ae::prepare_ae_summary(
-  meta       = meta,
-  population = population,   # ← passes entire data frame, not string "apat"
-  ...
 )
 ```
 
-### Failure patterns
+**Error:** `unused arguments (adsl = list(...))` — the function signature is `prepare_ae_summary(meta, population, observation, parameter)`.
 
-| Error | Description |
-|-------|-------------|
-| **Missing package** | `metalite.ae` not in sandbox — would fail before running |
-| **Sample 0: wrong API** | Passed raw `adsl`/`adae` directly; `prepare_ae_summary()` requires a `meta_adam` object |
-| **Sample 1: correct meta direction, wrong builder** | Used `meta_adam()` constructor + manual `define_*()` chain; should use `meta_ae_example()` as base and replace `$data_population` / `$data_observation` |
-| **Sample 2: invented file structure** | Expected RDS + CSV files that don't exist; prompt explicitly provided only `.tsv` inputs |
+**Root cause:** The agent treats `metalite.ae` functions like standard tidyverse verbs that accept data frames. It has no knowledge of the `meta_adam` object pattern — the correct approach is `meta <- meta_ae_example(); meta$data_population <- adsl; meta$data_observation <- adae`.

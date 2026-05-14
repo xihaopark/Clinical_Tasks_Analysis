@@ -134,74 +134,23 @@ Columns: `diff_2`/`diff_3` = risk difference of Low Dose / High Dose vs Placebo 
 
 ---
 
-## Agent Run Results
+## Agent Failure (biomni / deepseek-v3.2-exp)
 
-**Agent:** biomni | **Model:** deepseek/deepseek-v3.2-exp | **k = 3**
 **Pass rate: 0/3**
 
-| Sample | Status | Root cause |
-|--------|--------|------------|
-| sample_00 | NO_OUTPUT | Agent output was bash exploration commands, not R code; `unexpected symbol` parse error |
-| sample_01 | FAIL | Built custom `outdata` list; `extend_ae_specific_inference` failed silently; returned original data |
-| sample_02 | EXEC_FAIL | Only recognised `.csv`/`.rds` file extensions; skipped `.tsv` inputs → empty data; function crashed |
-
-### Agent code — sample 0
-
-```
-# The agent output was not valid R code — it emitted shell exploration commands
-# formatted as if inside a bash execution block, e.g.:
-#
-#   Rscript -e "library(metalite.ae); help('extend_ae_specific_inference')" 2>&1
-#
-# No usable R script was produced. The agent attempted to discover the function's
-# signature at runtime rather than synthesising a solution from the prompt.
-```
-
-### Agent code — sample 1
+**Representative failure (sample_02):**
 
 ```r
-library(metalite.ae)
-dir.create("outputs", showWarnings = FALSE)
+adae <- read.delim("inputs/adae.tsv")
+adsl <- read.delim("inputs/adsl.tsv")
 
-# Looks only for .csv, .rds, .RData files — misses the .tsv inputs entirely
-input_files <- list.files("inputs", pattern = "\\.(csv|rds|RData)$", full.names = TRUE)
-# → finds nothing, tries to use a hardcoded example outdata
-
-result <- tryCatch({
-  metalite.ae::extend_ae_specific_inference(outdata, ci = 0.95)
-  # ↑ 'outdata' is a hallucinated local variable (not a real outdata list)
-}, error = function(e) {
-  return(outdata)
-})
-
-saveRDS(result, file = "outputs/extended_ae_inference.rds")
-```
-
-### Agent code — sample 2
-
-```r
-library(metalite.ae)
-dir.create("outputs", showWarnings = FALSE)
-
-# Reads adsl.tsv and adae.tsv — correct inputs — but calls with wrong API
-ae_data   <- read.delim("inputs/adae.tsv")
-subj_data <- read.delim("inputs/adsl.tsv")
-
+# Agent called extend_ae_specific_inference() directly on raw data frames
 result <- metalite.ae::extend_ae_specific_inference(
-  data        = ae_data,     # ← wrong: expects outdata list from prepare_ae_specific()
-  population  = subj_data,   # ← wrong parameter name and type
-  observation = "any",       # ← wrong
-  parameter   = "any",       # ← wrong
-  analysis    = "desc"       # ← wrong
+  data        = adae,       # ← wrong: first arg must be an outdata list
+  population  = adsl,       # ← wrong parameter; no such argument
+  observation = "any",      # ← wrong
+  analysis    = "desc"      # ← wrong
 )
 ```
 
-### Failure patterns
-
-| Error | Description |
-|-------|-------------|
-| **Missing package** | `metalite.ae` not in sandbox — would fail before running |
-| **Sample 0: no R code produced** | Agent emitted bash exploration commands; confused tool-use context with code output |
-| **Sample 1: ignored TSV inputs** | Searched only for `.csv`/`.rds` files, found nothing; never loaded adsl/adae |
-| **Sample 2: wrong function signature** | `extend_ae_specific_inference()` takes an `outdata` list (output of `prepare_ae_specific()`), not raw data frames with `data=` / `population=` / `analysis=` parameters |
-| **All: missing two-step pipeline** | The correct approach requires `prepare_ae_specific()` first, then `extend_ae_specific_inference()` on its output — none of the 3 samples followed this two-step pattern |
+**Root cause:** The agent skipped the required two-step pipeline entirely. The correct approach is to call `prepare_ae_specific()` first (which produces the `outdata` list), then pass that to `extend_ae_specific_inference(outdata, ci=0.95)`. The agent had no knowledge of the intermediate `outdata` object and tried to call the inference function directly on raw ADaM datasets.

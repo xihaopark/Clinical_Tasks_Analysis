@@ -124,88 +124,24 @@ Output shape: **(5, 6)**
 
 ---
 
-## Agent Run Results
+## Agent Failure (biomni / deepseek-v3.2-exp)
 
-**Agent:** biomni | **Model:** deepseek/deepseek-v3.2-exp | **k = 3**
 **Pass rate: 0/3**
 
-| Sample | Status | Root cause |
-|--------|--------|------------|
-| sample_00 | NO_OUTPUT | `rtf_new()` does not exist → script crashed immediately |
-| sample_01 | NO_OUTPUT | Read `inputs/strata.tsv` (rate_compare_sum inputs) — wrong task context; file not found → crash |
-| sample_02 | NO_OUTPUT | Read `inputs/n1.tsv`, `inputs/x0.tsv`, ... (rate_compare_sum inputs) — wrong task context; files not found |
-
-### Agent code — sample 0
+**Representative failure (sample_00):**
 
 ```r
 library(r2rtf)
-dir.create('outputs', showWarnings = FALSE)
 
-# Reads the input file correctly, but then calls non-existent functions
-data <- read_input_data()   # custom helper that reads inputs/
+# Agent invented a document-object API that doesn't exist in r2rtf
+rtf <- rtf_new()                           # ← function does not exist
+rtf <- rtf %>% rtf_title("Report")        # ← does not exist
+rtf <- rtf %>% rtf_body(tbl = data, ...)  # ← wrong usage; rtf_body() is called on the df, not an rtf object
+rtf <- rtf %>% rtf_page_footer(...)       # ← does not exist
 
-# Hallucinated r2rtf API:
-rtf <- rtf_new()            # ← does not exist; r2rtf uses pipe-based attribute accumulation
-rtf <- rtf %>% rtf_title(title = "Data Analysis Report", subtitle = ...)
-rtf <- rtf %>% rtf_body(tbl = data, col_rel_width = rep(1, ncol(data)))
-rtf <- rtf %>% rtf_page_header("Summary Statistics") %>% ...
-rtf <- rtf %>% rtf_page_footer(paste("Page", rtf_page_number()))
-
-rtf_write(rtf_doc, file = output_file)    # ← rtf_write() doesn't work this way in r2rtf
+rtf_write(rtf, file = "output.rtf")       # ← does not exist
 ```
 
-### Agent code — sample 1
+**Error:** `could not find function "rtf_new"` — crashed on the first line.
 
-```r
-# Defines %||% operator (correct insight that r2rtf needs it)
-`%||%` <- function(x, y) if (is.null(x)) y else x
-
-library(r2rtf)
-library(dplyr)
-dir.create("outputs", showWarnings = FALSE)
-
-# Reads rate_compare_sum task inputs instead of the correct dataset.tsv:
-strata <- read.delim("inputs/strata.tsv", header = FALSE, skip = 1)[[1]]
-n0     <- read.delim("inputs/n0.tsv",     header = FALSE, skip = 1)[[1]]
-# ... (builds a data frame from rate_compare_sum inputs, not from dataset.tsv)
-
-df_rtf <- df %>%
-  rtf_body(col_rel_width = c(2,1,1,1,1,1,1), text_justification = c("l",rep("c",6)), ...)
-
-# Uses rtf_encode() / write_rtf() — these may work but reads wrong inputs
-rtf <- rtf_encode(df_rtf)
-write_rtf(rtf, file = "outputs/stratified_table.rtf")
-```
-
-### Agent code — sample 2
-
-```r
-library(r2rtf)
-dir.create("outputs", showWarnings = FALSE)
-
-# Reads TSV files from inputs/, but then uses incorrect rtf_body() call
-tbl_with_attrs <- rtf_body(
-  tbl                = data,
-  col_rel_width      = rep(1, ncol(data)),
-  as_colheader       = TRUE,    # ← not a valid rtf_body() parameter
-  border_left        = "single",
-  border_right       = "single",
-  border_top         = "single",
-  border_bottom      = "single",
-  text_justification = rep("c", ncol(data)),
-  text_font_size     = 10,
-  last_row           = TRUE     # ← not a valid parameter
-)
-rtf_doc <- rtf_encode(tbl_with_attrs)
-write_rtf(rtf_doc, file = output_path)
-# No result.csv created — never reads attributes or builds the output data frame
-```
-
-### Failure patterns
-
-| Error | Description |
-|-------|-------------|
-| **Sample 0: hallucinated API** | `rtf_new()`, `rtf_title()`, `rtf_page_header()`, `rtf_page_footer()` do not exist |
-| **Sample 1: wrong input files** | Read `strata.tsv`, `n0.tsv`, ... from the rate_compare_sum task instead of `dataset.tsv`; mixed up task contexts |
-| **Sample 2: wrong output format** | Wrote an RTF file instead of the required `result.csv`; never extracted attributes into a data frame |
-| **All: missed the attribute-extraction step** | The task requires reading `attr(result, "text_justification")` with column-major stride — no sample attempted this |
+**Root cause:** The agent assumed r2rtf follows a document-builder pattern (create object → chain methods → write). The actual API is attribute-accumulation: `df |> rtf_page() |> rtf_body(...)` attaches formatting metadata as attributes on the data frame. The task additionally requires extracting those attributes (`attr(result, "text_justification")`) and writing them as a CSV — a step no agent attempted.
