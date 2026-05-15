@@ -128,20 +128,33 @@ Output shape: **(5, 6)**
 
 **Pass rate: 0/3**
 
-**Representative failure (sample_00):**
+**Representative failure (sample_00) — invented non-existent API:**
 
 ```r
-library(r2rtf)
-
-# Agent invented a document-object API that doesn't exist in r2rtf
-rtf <- rtf_new()                           # ← function does not exist
-rtf <- rtf %>% rtf_title("Report")        # ← does not exist
-rtf <- rtf %>% rtf_body(tbl = data, ...)  # ← wrong usage; rtf_body() is called on the df, not an rtf object
-rtf <- rtf %>% rtf_page_footer(...)       # ← does not exist
-
-rtf_write(rtf, file = "output.rtf")       # ← does not exist
+rtf <- rtf_new()           # ← does not exist
+rtf <- rtf %>% rtf_title("Report")  # ← does not exist
+rtf <- rtf %>% rtf_body(tbl = data, ...)  # ← wrong usage
+rtf_write(rtf, file = "output.rtf")  # ← does not exist
 ```
 
-**Error:** `could not find function "rtf_new"` — crashed on the first line.
+**Actual stdout:**
+```
+Starting r2rtf document generation...
+Found 1 file(s) in inputs directory:
+  - dataset.tsv
+
+Creating RTF document from data...
+Data dimensions: 10 rows × 5 columns
+Column names: USUBJID, TRT01P, AGE, SEX, BMIBL
+
+Error occurred:
+   could not find function "rtf_new"
+```
+
+**Actual stderr:**
+```
+Error: Script execution failed.
+Execution halted
+```
 
 **Root cause:** The agent assumed r2rtf follows a document-builder pattern (create object → chain methods → write). The actual API is attribute-accumulation: `df |> rtf_page() |> rtf_body(...)` attaches formatting metadata as attributes on the data frame. The task additionally requires extracting those attributes (`attr(result, "text_justification")`) and writing them as a CSV — a step no agent attempted.

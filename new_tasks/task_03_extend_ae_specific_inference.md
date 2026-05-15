@@ -138,19 +138,35 @@ Columns: `diff_2`/`diff_3` = risk difference of Low Dose / High Dose vs Placebo 
 
 **Pass rate: 0/3**
 
-**Representative failure (sample_02):**
+**Representative failure (sample_02) — skipped the pipeline, rejected `.tsv` input:**
 
 ```r
-adae <- read.delim("inputs/adae.tsv")
-adsl <- read.delim("inputs/adsl.tsv")
-
-# Agent called extend_ae_specific_inference() directly on raw data frames
+# Agent tried to read ADaM files with a custom reader that only accepts CSV/RDS/RData
+# Then called extend_ae_specific_inference() directly on raw data
 result <- metalite.ae::extend_ae_specific_inference(
   data        = adae,       # ← wrong: first arg must be an outdata list
-  population  = adsl,       # ← wrong parameter; no such argument
-  observation = "any",      # ← wrong
-  analysis    = "desc"      # ← wrong
+  population  = adsl,
+  observation = "any"
 )
 ```
 
-**Root cause:** The agent skipped the required two-step pipeline entirely. The correct approach is to call `prepare_ae_specific()` first (which produces the `outdata` list), then pass that to `extend_ae_specific_inference(outdata, ci=0.95)`. The agent had no knowledge of the intermediate `outdata` object and tried to call the inference function directly on raw ADaM datasets.
+**Actual stdout:**
+```
+Step 1: Reading input data from 'inputs/' directory...
+Found 2 input file(s):
+  - adae.tsv
+  - adsl.tsv
+
+Fatal error in script execution:
+No data could be read from input files. Please check file formats and content.
+
+Script terminated with errors.
+```
+
+**Actual stderr:**
+```
+Warning: Unsupported file format: .tsv (file: adae.tsv)
+Warning: Unsupported file format: .tsv (file: adsl.tsv)
+```
+
+**Root cause:** The agent used a custom file reader that rejected `.tsv` format. It never reached `extend_ae_specific_inference()`. The correct two-step pipeline is: `prepare_ae_specific()` → `extend_ae_specific_inference(outdata, ci=0.95)`. The agent had no knowledge of the intermediate `outdata` list and tried to call the inference function directly on raw ADaM datasets.

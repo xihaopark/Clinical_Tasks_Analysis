@@ -80,14 +80,33 @@ Output shape: **(1, 4)**
 
 ---
 
-## Failure Analysis
+## Agent Failure
 
-`extend_condition(cond, var, is)` is a **string-level meta-programming utility** — it takes three scalar strings and returns one combined condition string. The entire function is a string concatenation.
+**Pass rate: 0/5**
+
+**Representative run (sample_01) — function not found:**
+
+```
+Error in extend_condition(cond = c, var = v, is = i) :
+  could not find function "extend_condition"
+Calls: mapply -> <Anonymous>
+Execution halted
+```
+
+The model called `extend_condition()` via `mapply` iterating over multiple conditions — it did not know the function takes three **scalar strings** and returns one string. When the function wasn't available as `extend_condition()` (it requires `admiral::extend_condition()`), the run crashed.
+
+**sample_00 (ran but wrong output):**
+```
+Processing complete.
+Number of conditions processed: 5
+Output files written to outputs/ directory:
+  - extended_conditions.csv    ← wrong filename (should be result.csv)
+```
+Output had 5 rows (iterated row-by-row) and was missing the `result` column.
+
+**Root cause:** `extend_condition(cond, var, is)` is a scalar string utility: call it once with three strings, get back one combined condition string. The model treats it as a row-wise dataset operation.
 
 | Failure mode | Runs | What happened |
 |---|---|---|
-| Shape mismatch (125 rows) | 1/5 | Model iterated over all combinations in a dataset |
-| Shape mismatch (5 rows) | 3/5 | Model applied the condition row-by-row over the input data |
-| Missing `result` column | 5/5 | All runs produced 3 columns instead of 4 |
-
-**Root cause:** The model's mental model of admiral treats all functions as `dataset → dataset` transformations. `extend_condition()` is a **meta-programming tool** that manipulates condition strings at the expression level. The model does not recognise functions that operate below the data frame layer.
+| `could not find function "extend_condition"` | 2/5 | Used bare name; should be `admiral::extend_condition()` |
+| Wrong shape (5 rows instead of 1) | 3/5 | Applied row-by-row; missing `result` column |

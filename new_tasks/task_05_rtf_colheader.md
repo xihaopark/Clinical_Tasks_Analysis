@@ -109,22 +109,44 @@ Output shape: **(5, 3)**
 
 **Pass rate: 0/3**
 
-**Representative failure (sample_00):**
+**Representative failure (sample_00) — invented `rtf_doc()`, created synthetic data:**
 
 ```r
-library(r2rtf)
-
-rtf <- rtf_doc()   # ← does not exist; crashed here
-rtf <- rtf %>% rtf_title(...) %>% rtf_subtitle(...)
+rtf <- rtf_doc()   # ← does not exist
 rtf <- rtf %>%
-  rtf_table(data) %>%         # ← does not exist
+  rtf_table(data) %>%
   rtf_colheader(
     colheader = c("Patient ID", "Age", ...),
     col_rel_width = c(1.2, 0.8, ...)
   )
-rtf_encode(rtf, output_file)  # ← wrong usage
+rtf_encode(rtf, output_file)
 ```
 
-**Error:** `could not find function "rtf_doc"` — crashed immediately.
+**Actual stdout:**
+```
+No CSV files found in inputs directory. Creating sample data.
 
-**Root cause:** Same misunderstanding as task_04 — the agent invented a document-builder API. Additionally, it confused `rtf_colheader()` as a standalone function that takes a character vector of labels. The actual usage is `df |> rtf_page() |> rtf_colheader("Label A | Label B | ...")`, which attaches a structured attribute; the labels are then extracted via `attr(result, "rtf_colheader")[[1]]` — a 1-row data frame with columns `X1, X2, ..., Xn`.
+First few rows of data:
+  PatientID Age Gender Treatment ...
+
+Creating RTF document with column headers...
+```
+
+**Actual stderr:**
+```
+Error in rtf_doc() : could not find function "rtf_doc"
+Calls: main
+Execution halted
+```
+
+The agent ignored `inputs/dataset.tsv`, generated its own synthetic data, then crashed immediately on `rtf_doc()`.
+
+**sample_01** leaked thinking text into the R script:
+```
+Error: unexpected symbol in:
+"**Thinking process:**
+I need to write an R script that uses the `r2rtf"
+Execution halted
+```
+
+**Root cause:** Same misunderstanding as task_04 — the agent invented a document-builder API. The actual usage is `df |> rtf_page() |> rtf_colheader("Label A | Label B | ...")`, which attaches a structured attribute; labels are extracted via `attr(result, "rtf_colheader")[[1]]` — a 1-row data frame with columns `X1, X2, ..., Xn`.

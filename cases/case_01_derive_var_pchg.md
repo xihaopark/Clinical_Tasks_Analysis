@@ -78,13 +78,33 @@ Output shape: **(5, 7)**. Numeric columns are compared with tolerance; the value
 
 ---
 
-## Failure Analysis
+## Agent Failure
 
-The model fails to satisfy the **preprocessing contract**: it either does not construct `AVAL`/`BASE`, or constructs `BASE` differently from the reference.
+**Pass rate: 0/5**
+
+**Representative run (sample_00) — wrong `BASE` per group:**
+
+The agent assigned `BASE` as the first `AVAL` within each group (`A` → 10.5, `B` → 20.3), not the global first row. It also saved to `outputs/result_with_pchg.csv` instead of `outputs/result.csv`.
+
+**Actual stdout:**
+
+```
+Data prepared for PCHG calculation:
+# A tibble: 5 × 6
+     id value group category  BASE  AVAL
+  <dbl> <dbl> <chr> <chr>    <dbl> <dbl>
+1     1  10.5 A     Type1     10.5  10.5
+2     2  20.3 B     Type2     20.3  20.3   ← BASE = 20.3 (wrong; should be 10.5)
+3     3  30.7 A     Type1     10.5  30.7
+4     4  40.2 B     Type2     20.3  40.2   ← PCHG wrong because BASE wrong
+5     5  50.9 A     Type1     10.5  50.9
+
+Results saved to: outputs/result_with_pchg.csv   ← wrong filename
+```
+
+**Root cause:** The model constructs `BASE` per group rather than using the global first row `AVAL[1]`. Additionally, it outputs to a non-standard filename, so grading cannot find `outputs/result.csv`.
 
 | Failure mode | Runs | What happened |
 |---|---|---|
-| `BASE` computed as mean or self-value | 3/5 | `PCHG` values numerically wrong |
-| `Missing required columns: AVAL, BASE` | 2/5 | Passed raw dataset without synthesising columns |
-
-The task tests whether the model will follow the explicit preprocessing instruction in the prompt. When `AVAL` and `BASE` are absent, `admiral::derive_var_pchg()` errors. The model either ignores this requirement or constructs `BASE` incorrectly (e.g. taking each row's own AVAL as its baseline).
+| Wrong `BASE` (per-group or self-value) | 3/5 | `PCHG` values numerically incorrect |
+| Wrong output filename | 5/5 | All runs saved to `result_with_pchg.csv` or `dataset_with_pchg.csv` |

@@ -107,14 +107,42 @@ Output shape: **(9, 5)** — 6 original HEIGHT/WEIGHT rows + 3 appended BMI rows
 
 ---
 
-## Failure Analysis
+## Agent Failure
 
-`derive_param_bmi()` requires `by_vars` as an `exprs()` list of bare symbols — admiral's NSE (non-standard evaluation) pattern. The model consistently passes a character vector instead.
+**Pass rate: 0/5**
+
+**Representative run (sample_00) — `exprs()` vs character vector:**
+
+```
+Error in `derive_param_bmi()`:
+! Argument `by_vars` must be a list of <symbol>, e.g., `exprs(USUBJID, VISIT)`.
+Backtrace:
+    ▆
+ 1. ├─base::tryCatch(...)
+ 2. │ └─base (local) tryCatchList(expr, classes, parentenv, handlers)
+ 3. │   └─base (local) tryCatchOne(expr, names, parentenv, handlers[[1L]])
+ 4. │     └─value[[3L]](cond)
+```
+
+The error message even shows the correct fix (`exprs(USUBJID, VISIT)`), but the model passed `c("USUBJID","AVISIT")`.
+
+**sample_01** — missing required argument:
+```
+Error in derive_param_bmi: Argument `get_unit_expr` cannot be missing.
+```
+Model called `derive_param_bmi()` without `get_unit_expr = extract_unit(PARAM)`.
+
+**sample_02** — wrong argument:
+```
+Error during BMI derivation:
+unused argument (optional = TRUE)
+```
+Model passed a non-existent `optional` argument.
+
+**Root cause:** The `exprs()` pattern is admiral's NSE convention — variable names must be passed as unevaluated symbols, not strings. The model consistently uses `c("VAR1", "VAR2")`, which works in base R/dplyr but crashes on admiral's `admiraldev::assert_vars()`.
 
 | Failure mode | Runs | What happened |
 |---|---|---|
-| `by_vars must be a list of <symbol>` crash | 3/5 | Model passed `c("USUBJID","AVISIT")` instead of `exprs(USUBJID, AVISIT)` |
-| Shape mismatch — single summary row | 1/5 | Model collapsed to 1-row output |
-| `NO_OUTPUT` | 1/5 | Other crash |
-
-The `exprs()` pattern is admiral's most pervasive design choice. Nearly every `derive_*` function takes `by_vars`, `set_values_to`, and `order` as `exprs()` lists — tidy evaluation where variable names are passed as unevaluated symbols. The model consistently reverts to `c("VAR1", "VAR2")`, which works in base R and dplyr but crashes on admiral's `admiraldev::assert_vars()`.
+| `by_vars must be list of <symbol>` | 3/5 | Passed character vector instead of `exprs()` |
+| `get_unit_expr cannot be missing` | 1/5 | Omitted required argument |
+| Wrong argument name | 1/5 | Passed `optional = TRUE` which doesn't exist |

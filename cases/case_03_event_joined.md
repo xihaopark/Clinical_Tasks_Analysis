@@ -79,13 +79,31 @@ The graded CSV records the S3 class name of the returned specification object. T
 
 ---
 
-## Failure Analysis
+## Agent Failure
 
-`admiral::event_joined()` returns a **declarative S3 specification object**, not a joined dataset. The model does not recognise this pattern.
+**Pass rate: 0/5**
+
+**Representative run (sample_00) — treated arguments as data columns, crashed on type check:**
+
+```
+Creating event_joined object...
+
+ERROR: Failed to create event_joined object:
+  Argument `first_cond_upper` must be a filter condition, but is a symbol
+```
+
+The agent read the input files (dataset_name, join_vars, etc.) and tried to pass them directly as arguments, including `first_cond_upper` which it inferred from the input filenames. admiral's argument validation rejected the symbol.
+
+**Another failure (sample_01):**
+```
+Error during execution: invalid regular expression '[+\-*/()]', reason 'Invalid character range'
+```
+The agent tried to parse the `order` input field as an arithmetic expression using regex, which produced a malformed pattern.
+
+**Root cause:** The model treats `event_joined()` as a data-joining function, not a constructor. It has no knowledge that the function builds an S3 specification object — it tries to perform an actual join or process data rows, leading to type errors or wrong output shape.
 
 | Failure mode | Runs | What happened |
 |---|---|---|
-| `EXEC_FAIL` — attempted data join | 2/5 | Model called `dplyr::left_join()` or similar; crashed |
-| `NO_OUTPUT` — returned multi-row data frame | 3/5 | Model returned source dataset rows instead of the constructor object |
-
-The model's mental model of admiral treats all functions as `dataset → dataset` transformations. `event_joined()` is a **constructor** — it builds a specification that `derive_param_tte()` later consumes. The output in normal use is never inspected directly; it is passed as an argument to another function.
+| `first_cond_upper` type error | 2/5 | Passed symbol instead of filter condition |
+| Regex parse error in `order` | 1/5 | Tried to parse expression strings with malformed regex |
+| Wrong output shape (data frame rows) | 2/5 | Returned dataset rows instead of S3 constructor object |

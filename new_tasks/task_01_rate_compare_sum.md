@@ -140,20 +140,31 @@ Output shape: **(1, 5)**
 
 **Pass rate: 1/3** — sample_01 passed by coincidence: balanced strata (n=86/86/86 vs 84/84/84) make `weight="ss"` numerically equal to `weight="cmh"`.
 
-**Representative failure (sample_00):**
+**Representative failure (sample_00) — wrong options, wrong output format:**
 
 ```r
-# Agent used scan() instead of read.delim()$column
-n0     <- scan('inputs/n0.tsv', skip = 1, quiet = TRUE)
+n0     <- scan('inputs/n0.tsv', skip = 1, quiet = TRUE)   # ← should be read.delim()$n0
 strata <- scan('inputs/strata.tsv', what = character(), skip = 1, quiet = TRUE)
 
 result <- rate_compare_sum(
   ...,
-  weight = "ss",        # ← wrong: should be "cmh" (CMH stratification)
+  weight = "ss",        # ← wrong: should be "cmh"
   test   = "one.sided", # ← wrong: should be "two.sided"
 )
 
-write.table(result, file = 'outputs/result.tsv', ...)  # ← wrong format and filename
+write.table(result, file = 'outputs/result.tsv', ...)  # ← wrong: should be CSV at result.csv
 ```
 
-**Key errors:** ignored the `read.delim()$col` pattern shown in the prompt; defaulted to `weight="ss"` (sample-size weighting) instead of `"cmh"`; wrote TSV instead of CSV.
+**Actual stdout:**
+```
+Analysis completed successfully.
+Results saved to outputs/result.tsv
+
+Summary of results:
+        est  z_score           p      lower     upper
+1 0.1383352 4.227384 1.18212e-05 0.07381009 0.2052666
+```
+
+The numeric values look close but the p-value differs (`1.18212e-05` vs expected `2.36424e-05`) because `test="one.sided"` halves the two-sided p-value. Output saved to `.tsv` not `.csv`, so grading cannot find `outputs/result.csv`.
+
+**Key errors:** used `scan()` instead of `read.delim()$col`; defaulted to `weight="ss"` and `test="one.sided"`; wrote TSV instead of CSV.

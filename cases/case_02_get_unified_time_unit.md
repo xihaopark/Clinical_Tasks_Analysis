@@ -69,19 +69,31 @@ Output shape: **(1, 2)**
 
 ---
 
-## Failure Analysis
+## Agent Failure
 
-`get_unified_time_unit` is a **non-exported internal function** of admiral. Calling `admiral::get_unified_time_unit()` directly throws an error. The correct access pattern is:
+**Pass rate: 0/5**
 
-```r
-get("get_unified_time_unit", envir = asNamespace("admiral"))
+**Representative run (sample_02) — function not found, returned original values unchanged:**
+
+```
+Warning message:
+! Function 'get_unified_time_unit' not found in admiral package. Returning original values.
+
+Output files successfully created:
+  - outputs/time_unit_mapped.csv
+
+First few rows of processed data:
+# A tibble: 1 × 4
+  time_unit  standardized_term processing_date package_version
+  <chr>      <chr>             <date>          <pckg_vrs>
+1 test_value test_value        2026-05-14      1.4.1
 ```
 
-The prompt explicitly states this. The model ignores it.
+The agent wrapped the call in a `tryCatch`, swallowed the namespace error, and silently returned the input unchanged. The output CSV has four columns instead of two, and the `result` column contains the raw input rather than the standardised term.
+
+**Root cause:** `get_unified_time_unit` is not exported; `admiral::get_unified_time_unit()` throws `"object not found"`. The prompt explicitly provides the workaround (`get("...", envir = asNamespace("admiral"))`), but the model ignores it and substitutes its own normalisation logic or degrades gracefully with wrong output.
 
 | Failure mode | Runs | What happened |
 |---|---|---|
-| Wrong canonical form | 3/5 | Model invented its own normalisation (`tolower`, `gsub`) — returned `"day"` or `"DAYS"` instead of `"days"` |
-| `NO_OUTPUT` (namespace error) | 2/5 | Model called `admiral::get_unified_time_unit()` directly → error |
-
-In both cases the model substituted its own logic for the function it was explicitly told to call.
+| Returned original value unchanged | 3/5 | Model caught the namespace error and fell back to identity |
+| Wrong canonical form (`"day"`, `"DAYS"`) | 2/5 | Model used `tolower`/`gsub` instead of the function |

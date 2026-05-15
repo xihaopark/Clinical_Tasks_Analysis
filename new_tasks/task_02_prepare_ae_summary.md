@@ -117,21 +117,26 @@ Treatment arms: n_1 = High Dose (84), n_2 = Low Dose (84), n_3 = Placebo (86), n
 
 **Pass rate: 0/3**
 
-**Representative failure (sample_00):**
+**Representative failure (sample_00) — passed raw data frames instead of meta_adam:**
 
 ```r
-adsl <- read.delim('inputs/adsl.tsv', ...)
-adae <- read.delim('inputs/adae.tsv', ...)
-
-# Agent passed raw dataframes directly — wrong API entirely
 result <- prepare_ae_summary(
-  adsl        = adsl,          # ← prepare_ae_summary() takes a meta_adam object, not raw data
+  adsl        = adsl,          # ← wrong: first arg must be a meta_adam object
   adae        = adae,
   population  = "SAFFL == 'Y'",
   parameter   = "any;rel;ser",
 )
 ```
 
-**Error:** `unused arguments (adsl = list(...))` — the function signature is `prepare_ae_summary(meta, population, observation, parameter)`.
+**Actual stderr:**
+```
+any
+Error in prepare_ae_specific(meta, population = population, ...):
+  unused arguments (adsl = list(c("CDISCPILOT01", "CDISCPILOT01", ...)))
+Calls: prepare_ae_summary -> lapply -> FUN
+Execution halted
+```
 
 **Root cause:** The agent treats `metalite.ae` functions like standard tidyverse verbs that accept data frames. It has no knowledge of the `meta_adam` object pattern — the correct approach is `meta <- meta_ae_example(); meta$data_population <- adsl; meta$data_observation <- adae`.
+
+Note: sample_01 called `prepare_ae_summary()` correctly using the `meta_adam` pattern and the function ran successfully (printed "AE summary prepared successfully! Result contains 13 elements"), but it saved to multiple separate CSVs instead of the single flat `cbind()` result required by the task.
